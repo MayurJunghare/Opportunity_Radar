@@ -243,7 +243,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer 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"
+              "value": "Bearer YOUR_OPENAI_API_KEY"
             },
             {
               "name": "Content-Type",
@@ -630,11 +630,11 @@
           "parameters": [
             {
               "name": "apikey",
-              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJweGR6d2xoZmZ1amxtcmdsdnRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk0NTgsImV4cCI6MjA5MDAyNTQ1OH0.zo2t2OVeEr0Cv5uRf1E5WVaU2N1TLvxnNKPj7tsTReI"
+              "value": "supabase_anon_key"
             },
             {
               "name": "Authorization",
-              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJweGR6d2xoZmZ1amxtcmdsdnRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk0NTgsImV4cCI6MjA5MDAyNTQ1OH0.zo2t2OVeEr0Cv5uRf1E5WVaU2N1TLvxnNKPj7tsTReI"
+              "value": "Bearer supabase_anon_key"
             }
           ]
         },
