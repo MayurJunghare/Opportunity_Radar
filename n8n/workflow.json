@@ -1,0 +1,1040 @@
+{
+  "name": "Opportunity Radar - Signal Detection",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "application/rss+xml, text/xml, */*"
+            },
+            {
+              "name": "Referer",
+              "value": "https://economictimes.indiatimes.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -768,
+        272
+      ],
+      "id": "613b38a0-3310-4359-940d-bab27237c716",
+      "name": "ET Markets RSS"
+    },
+    {
+      "parameters": {
+        "url": "https://news.google.com/rss/search?q=BSE+NSE+insider+trade+corporate+filing+India&hl=en-IN&gl=IN&ceid=IN:en",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "application/rss+xml, text/xml, */*"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -768,
+        80
+      ],
+      "id": "06911cae-aa38-42a5-a9ea-3627ed80434b",
+      "name": "Google News RSS"
+    },
+    {
+      "parameters": {
+        "url": "https://www.nseindia.com/api/corporates-pit?symbol=&from=2026-03-01&to=2026-03-25&csv=true",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Referer",
+              "value": "https://www.nseindia.com"
+            },
+            {
+              "name": "Accept",
+              "value": "text/csv, text/plain, */*"
+            },
+            {
+              "name": "Cookie"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -768,
+        464
+      ],
+      "id": "c687c060-139d-44c2-ae0f-8bb2e8a83ea6",
+      "name": "NSE Insider Trades CSV"
+    },
+    {
+      "parameters": {
+        "url": "https://nsearchives.nseindia.com/content/equities/bulk.csv",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Referer",
+              "value": "https://www.nseindia.com"
+            },
+            {
+              "name": "Accept",
+              "value": "text/csv, text/plain, */*"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -768,
+        656
+      ],
+      "id": "e135b9c2-a99b-4760-9671-9f991b310f5d",
+      "name": "NSE Bulk Deals CSV"
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -544,
+        416
+      ],
+      "id": "bcc1ccf9-a3b6-4994-be65-86a8877cb9eb",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = [];\nconst seen = new Set();\n\n// ── DATE FILTER: skip news older than 7 days ──\nconst cutoffDate = new Date();\ncutoffDate.setDate(cutoffDate.getDate() - 7);\n\nfor (const item of $input.all()) {\n  const raw = item.json.data || '';\n\n  // ── RSS/XML handling ──\n  if (raw.includes('<item>')) {\n    const matches = [...raw.matchAll(/<item>([\\s\\S]*?)<\\/item>/g)];\n\n    for (const match of matches) {\n      const block = match[1];\n\n      const get = (tag) => {\n        const m = block.match(\n          new RegExp(`<${tag}[^>]*><!\\\\[CDATA\\\\[([\\\\s\\\\S]*?)\\\\]\\\\]><\\\\/${tag}>|<${tag}[^>]*>([\\\\s\\\\S]*?)<\\\\/${tag}>`)\n        );\n        return m ? (m[1] || m[2] || '').trim() : '';\n      };\n\n      const guid = get('guid') || get('link');\n      if (!guid || seen.has(guid)) continue;\n\n      // ── 7-day date filter for news ──\n      const pubDateStr = get('pubDate');\n      if (pubDateStr) {\n        const pubDate = new Date(pubDateStr);\n        if (!isNaN(pubDate.getTime()) && pubDate < cutoffDate) continue;\n      }\n\n      seen.add(guid);\n      items.push({ json: {\n        data_type: 'news',\n        title: get('title').replace(/<!\\[CDATA\\[|\\]\\]>/g, '').trim(),\n        description: get('description').replace(/<[^>]*>/g, '').substring(0, 300),\n        link: get('link'),\n        pubDate: pubDateStr,\n        guid,\n        source: raw.includes('economictimes') ? 'ET Markets' : 'Google News'\n      }});\n    }\n  }\n\n  // ── CSV handling (Insider trades + Bulk deals) ──\n  else if (raw.includes(',') && raw.includes('\\n')) {\n    const lines = raw.trim().split('\\n').filter(l => l.trim());\n    if (lines.length < 2) continue;\n\n    const headers = lines[0]\n      .replace(/\"/g, '')\n      .split(',')\n      .map(h => h.trim().toLowerCase().replace(/[\\s\\/\\(\\)]+/g, '_'));\n\n    for (let i = 1; i < Math.min(lines.length, 100); i++) {\n      const values = lines[i].replace(/\"/g, '').split(',');\n      const obj = {};\n      headers.forEach((h, idx) => {\n        obj[h] = (values[idx] || '').trim();\n      });\n\n      const symbol = obj.symbol || obj.scrip_code || '';\n      const date = obj.date || obj.trade_date || obj.acquisition_date || '';\n      const guid = `csv-${symbol}-${date}-${i}`;\n\n      if (!symbol || seen.has(guid)) continue;\n\n      // ── 7-day date filter for CSV items ──\n      if (date) {\n        const itemDate = new Date(date);\n        if (!isNaN(itemDate.getTime()) && itemDate < cutoffDate) continue;\n      }\n\n      seen.add(guid);\n\n      const isInsider = headers.some(function(h) {\n        return h.includes('acquirer') ||\n          h.includes('disposer') ||\n          h.includes('category_of_person');\n      });\n\n      const isIndexList = headers.some(function(h) {\n        return h.includes('company_name') || h.includes('isin_code');\n      }) && !headers.some(function(h) {\n        return h.includes('quantity') ||\n          h.includes('price') ||\n          h.includes('value') ||\n          h.includes('buy') ||\n          h.includes('sell');\n      });\n\n      if (isIndexList) continue;\n\n      items.push({ json: {\n        data_type: isInsider ? 'insider_trade' : 'bulk_deal',\n        symbol: symbol.toUpperCase(),\n        ...obj,\n        guid,\n        source: 'NSE'\n      }});\n    }\n  }\n}\n\nreturn items.length > 0 ? items : [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        464
+      ],
+      "id": "134062a8-9fe9-4e1b-a5b2-4e041903ef90",
+      "name": "Parse + Deduplicate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── READ PORTFOLIO FROM SUPABASE (by node name, no wiring needed) ──\nvar PORTFOLIO_MAP = {};\n\ntry {\n  var portfolioRows = $('Fetch Portfolio from Supabase').all();\n  for (var s = 0; s < portfolioRows.length; s++) {\n    var row = portfolioRows[s].json;\n    if (row.ticker) {\n      var t = row.ticker.trim().toUpperCase();\n      PORTFOLIO_MAP[t] = generateVariants(t);\n    }\n  }\n} catch(e) {}\n\n// Fallback if Supabase unreachable\nif (Object.keys(PORTFOLIO_MAP).length === 0) {\n  PORTFOLIO_MAP = {\n    'RELIANCE':   ['RELIANCE', 'RIL', 'RELIANCE INDUSTRIES'],\n    'HDFCBANK':   ['HDFCBANK', 'HDFC BANK'],\n    'SBIN':       ['SBIN', 'SBI', 'STATE BANK'],\n    'INFY':       ['INFY', 'INFOSYS'],\n    'TCS':        ['TCS', 'TATA CONSULTANCY'],\n    'ZOMATO':     ['ZOMATO'],\n    'TATAMOTORS': ['TATAMOTORS', 'TATA MOTORS']\n  };\n}\n\n// ── NAME VARIANT GENERATOR ──\nfunction generateVariants(ticker) {\n  var knownNames = {\n    'RELIANCE':   ['RELIANCE', 'RIL', 'RELIANCE INDUSTRIES'],\n    'HDFCBANK':   ['HDFCBANK', 'HDFC BANK', 'HDFC'],\n    'INFY':       ['INFY', 'INFOSYS'],\n    'TCS':        ['TCS', 'TATA CONSULTANCY'],\n    'SBIN':       ['SBIN', 'SBI', 'STATE BANK OF INDIA'],\n    'ZOMATO':     ['ZOMATO'],\n    'TATAMOTORS': ['TATAMOTORS', 'TATA MOTORS'],\n    'WIPRO':      ['WIPRO'],\n    'ICICIBANK':  ['ICICIBANK', 'ICICI BANK'],\n    'KOTAKBANK':  ['KOTAKBANK', 'KOTAK BANK', 'KOTAK MAHINDRA'],\n    'AXISBANK':   ['AXISBANK', 'AXIS BANK'],\n    'HINDUNILVR': ['HINDUNILVR', 'HUL', 'HINDUSTAN UNILEVER'],\n    'BAJFINANCE': ['BAJFINANCE', 'BAJAJ FINANCE'],\n    'SUNPHARMA':  ['SUNPHARMA', 'SUN PHARMA'],\n    'NTPC':       ['NTPC', 'NTPC LIMITED'],\n    'ONGC':       ['ONGC', 'OIL AND NATURAL GAS'],\n    'TATASTEEL':  ['TATASTEEL', 'TATA STEEL'],\n    'JSWSTEEL':   ['JSWSTEEL', 'JSW STEEL'],\n    'MARUTI':     ['MARUTI', 'MARUTI SUZUKI'],\n    'ASIANPAINT': ['ASIANPAINT', 'ASIAN PAINTS'],\n    'TITAN':      ['TITAN', 'TITAN COMPANY'],\n    'TECHM':      ['TECHM', 'TECH MAHINDRA'],\n    'HCLTECH':    ['HCLTECH', 'HCL TECHNOLOGIES'],\n    'DRREDDY':    ['DRREDDY', 'DR REDDY'],\n    'CIPLA':      ['CIPLA'],\n    'APOLLOHOSP': ['APOLLOHOSP', 'APOLLO HOSPITALS'],\n    'IRCTC':      ['IRCTC'],\n    'INDIGO':     ['INDIGO', 'INTERGLOBE'],\n    'COALINDIA':  ['COALINDIA', 'COAL INDIA'],\n    'BPCL':       ['BPCL', 'BHARAT PETROLEUM'],\n    'ADANIENT':   ['ADANIENT', 'ADANI ENTERPRISES'],\n    'ADANIPORTS': ['ADANIPORTS', 'ADANI PORTS'],\n    'VEDL':       ['VEDL', 'VEDANTA'],\n    'ITC':        ['ITC', 'ITC LIMITED'],\n    'BAJAJ-AUTO': ['BAJAJ AUTO', 'BAJAJ-AUTO'],\n    'EICHERMOT':  ['EICHERMOT', 'EICHER MOTORS', 'ROYAL ENFIELD'],\n    'HINDALCO':   ['HINDALCO'],\n    'ULTRACEMCO': ['ULTRACEMCO', 'ULTRATECH CEMENT'],\n    'INDUSINDBK': ['INDUSINDBK', 'INDUSIND BANK'],\n    'FEDERALBNK': ['FEDERALBNK', 'FEDERAL BANK'],\n    'BANDHANBNK': ['BANDHANBNK', 'BANDHAN BANK'],\n    'PNB':        ['PNB', 'PUNJAB NATIONAL BANK'],\n    'BANKBARODA': ['BANKBARODA', 'BANK OF BARODA'],\n    'CANBK':      ['CANBK', 'CANARA BANK'],\n    'LICI':       ['LICI', 'LIC'],\n    'SBILIFE':    ['SBILIFE', 'SBI LIFE'],\n    'HDFCLIFE':   ['HDFCLIFE', 'HDFC LIFE'],\n    'DMART':      ['DMART', 'AVENUE SUPERMARTS'],\n    'NYKAA':      ['NYKAA'],\n    'PAYTM':      ['PAYTM', 'ONE97'],\n    'ZYDUSLIFE':  ['ZYDUSLIFE', 'ZYDUS'],\n    'TRENT':      ['TRENT'],\n    'PERSISTENT': ['PERSISTENT SYSTEMS'],\n    'LTIM':       ['LTIM', 'LTIMINDTREE'],\n    'MUTHOOTFIN': ['MUTHOOTFIN', 'MUTHOOT FINANCE'],\n    'GAIL':       ['GAIL', 'GAIL INDIA'],\n    'IOC':        ['IOC', 'INDIAN OIL'],\n    'SAIL':       ['SAIL', 'STEEL AUTHORITY'],\n    'POWERGRID':  ['POWERGRID', 'POWER GRID'],\n    'BRITANNIA':  ['BRITANNIA'],\n    'COLPAL':     ['COLPAL', 'COLGATE'],\n    'DABUR':      ['DABUR'],\n    'MARICO':     ['MARICO'],\n    'TATACONSUM': ['TATACONSUM', 'TATA CONSUMER'],\n    'NESTLEIND':  ['NESTLEIND', 'NESTLE'],\n    'IDFCFIRSTB': ['IDFCFIRSTB', 'IDFC FIRST'],\n    'RBLBANK':    ['RBLBANK', 'RBL BANK'],\n    'RBL':        ['RBL BANK', 'RBLBANK'],\n    'LENSKART':   ['LENSKART'],\n    'SWIGGY':     ['SWIGGY'],\n    'MM':         ['MAHINDRA', 'M&M'],\n    'L&T':        ['L&T', 'LARSEN', 'LARSEN AND TOUBRO', 'LARSEN & TOUBRO'],\n  };\n  if (knownNames[ticker]) return knownNames[ticker];\n  return [ticker];\n}\n\n// ── READ NIFTY 500 (by node name) ──\nvar NIFTY500 = [];\ntry {\n  var niftyItems = $('Fetch Nifty 500 List').all();\n  for (var i = 0; i < niftyItems.length; i++) {\n    var raw = niftyItems[i].json.data || '';\n    if (raw.includes('Company Name') && raw.includes('Symbol')) {\n      var lines = raw.trim().split('\\n');\n      for (var j = 1; j < lines.length; j++) {\n        var cols = lines[j].split(',');\n        var sym = (cols[2] || '').replace(/\"/g, '').trim().toUpperCase();\n        if (sym && sym.length > 1) NIFTY500.push(sym);\n      }\n      break;\n    }\n  }\n} catch(e) {}\n\n// Nifty 500 fallback\nif (NIFTY500.length === 0) {\n  NIFTY500 = [\n    'WIPRO','SUNPHARMA','BAJFINANCE','ICICIBANK','KOTAKBANK','AXISBANK',\n    'HINDUNILVR','ASIANPAINT','MARUTI','NESTLEIND','TITAN','ULTRACEMCO',\n    'TECHM','POWERGRID','NTPC','ONGC','COALINDIA','BPCL','HEROMOTOCO',\n    'DIVISLAB','CIPLA','DRREDDY','APOLLOHOSP','ADANIENT','ADANIPORTS',\n    'TATASTEEL','JSWSTEEL','HINDALCO','SAIL','BAJAJFINSV','BAJAJ-AUTO',\n    'EICHERMOT','TATACONSUM','DABUR','MARICO','GODREJCP','PIDILITIND',\n    'BERGEPAINT','HAVELLS','VOLTAS','INDIGO','IRCTC','CONCOR','BANDHANBNK',\n    'FEDERALBNK','IDFCFIRSTB','PNB','CANBK','UNIONBANK','BANKBARODA',\n    'INDUSINDBK','VEDL','ITC','BRITANNIA','COLPAL','LICI','SBILIFE',\n    'HDFCLIFE','DMART','NYKAA','PAYTM','ZYDUSLIFE','TRENT','PERSISTENT',\n    'LTIM','MUTHOOTFIN','GAIL','IOC','TATACHEM','COFORGE','OFSS'\n  ];\n}\n\n// ── MAIN MATCHING LOOP ──\nvar PORTFOLIO = Object.keys(PORTFOLIO_MAP);\nvar results = [];\n\nfor (var k = 0; k < $input.all().length; k++) {\n  var item = $input.all()[k];\n  var data = item.json;\n\n  // Skip Nifty 500 CSV rows\n  var rawCheck = data.data || '';\n  if (rawCheck.includes('Company Name') && rawCheck.includes('Symbol')) continue;\n\n  // Skip items with no content\n  if (!data.title && !data.symbol) continue;\n\n  // Skip empty bulk deals\n  if (data.data_type === 'bulk_deal' && !data.date && !data.quantity_traded) continue;\n\n  var searchText = ' ' + JSON.stringify(data).toUpperCase() + ' ';\n  var csvTicker = (data.symbol || '').toUpperCase();\n\n  // Check portfolio match\n  var inPortfolio = false;\n  var matchedTicker = '';\n\n  for (var p = 0; p < PORTFOLIO.length; p++) {\n    var ticker = PORTFOLIO[p];\n    var names = PORTFOLIO_MAP[ticker];\n    var matched = (csvTicker === ticker);\n\n    if (!matched) {\n      for (var n = 0; n < names.length; n++) {\n        var name = names[n].toUpperCase();\n        if (searchText.includes(' ' + name + ' ') ||\n            searchText.includes('\"' + name + '\"') ||\n            searchText.includes(' ' + name + ',') ||\n            searchText.includes(' ' + name + '.')) {\n          matched = true; break;\n        }\n      }\n    }\n    if (matched) { inPortfolio = true; matchedTicker = ticker; break; }\n  }\n\n  // Check Nifty 500 match (only if not portfolio)\n  var inUniverse = false;\n  if (!inPortfolio) {\n    for (var u = 0; u < NIFTY500.length; u++) {\n      var ut = NIFTY500[u];\n      if (csvTicker === ut ||\n          searchText.includes(' ' + ut + ' ') ||\n          searchText.includes('\"' + ut + '\"')) {\n        inUniverse = true; break;\n      }\n    }\n  }\n\n  // Tag and output\n  if (inPortfolio) {\n    results.push({ json: {\n      ...data,\n      matched_ticker: matchedTicker,\n      monitoring_type: 'portfolio',\n      tier_threshold: 'all'\n    }});\n  } else if (inUniverse) {\n    results.push({ json: {\n      ...data,\n      monitoring_type: 'universe',\n      tier_threshold: 'medium_and_above'\n    }});\n  }\n}\n\nreturn results.length > 0 ? results : [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        752
+      ],
+      "id": "9a3603a2-7d3e-4088-b98d-73789fc2f848",
+      "name": "Portfolio Filter"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Keyword Filter').first().json;\n\nconst title = (item.title || item.symbol || 'Unknown event')\n  .replace(/<!\\[CDATA\\[|\\]\\]>/g, '')\n  .trim();\n\nconst company = item.matched_ticker || item.symbol || 'Unknown';\nconst source = item.source || 'Unknown';\nconst guid = item.guid || item.link || '';\n\nconst details = (item.description || item.full_context || '')\n  .replace(/<!\\[CDATA\\[|\\]\\]>/g, '')\n  .substring(0, 200);\n\nconst prompt = `Research this Indian market event:\nEvent: ${title}\nCompany: ${company}\nSource: ${source}\nDetails: ${details}\n\nProvide: full context with exact numbers, historical precedent for this company, sector peer comparison. Under 300 words.`;\n\nconst payload = {\n  model: 'sonar',\n  max_tokens: 500,\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a financial research assistant for Indian stock markets. Be specific and concise.'\n    },\n    {\n      role: 'user',\n      content: prompt\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    perplexity_payload: JSON.stringify(payload),\n    guid: guid,\n    title: item.title,\n    matched_ticker: item.matched_ticker,\n    monitoring_type: item.monitoring_type,\n    tier_threshold: item.tier_threshold,\n    source: item.source,\n    link: item.link,\n    pubDate: item.pubDate,\n    symbol: item.symbol,\n    data_type: item.data_type,\n    description: item.description\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        752
+      ],
+      "id": "d6d9633b-eecb-4dd9-9733-007392462bd3",
+      "name": "Perplexity Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.perplexity_payload }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1024,
+        752
+      ],
+      "id": "7c2e4dd1-0e9f-4f37-8d3f-055cf9895811",
+      "name": "Perplexity API"
+    },
+    {
+      "parameters": {
+        "jsCode": "const perplexityResponse = $input.first().json;\n\n// Read original signal data from Keyword Filter\nconst originalItem = $('Keyword Filter').first().json;\n\nconst perplexityContent = perplexityResponse.choices?.[0]?.message?.content\n  || perplexityResponse.perplexity_context\n  || '';\n\nconst citations = (perplexityResponse.citations || [])\n  .slice(0, 3)\n  .join(', ');\n\nconst cleanTitle = (originalItem.title || originalItem.symbol || '')\n  .replace(/<!\\[CDATA\\[|\\]\\]>/g, '')\n  .trim();\n\nreturn [{\n  json: {\n    // Original signal fields\n    guid: originalItem.guid || originalItem.link || '',\n    title: cleanTitle,\n    matched_ticker: originalItem.matched_ticker,\n    monitoring_type: originalItem.monitoring_type,\n    tier_threshold: originalItem.tier_threshold,\n    source: originalItem.source,\n    original_link: originalItem.original_link || originalItem.link || '',\n    pubDate: originalItem.pubDate,\n    symbol: originalItem.symbol,\n    data_type: originalItem.data_type,\n    description: originalItem.description,\n\n    // Perplexity enrichment\n    perplexity_context: perplexityContent,\n    perplexity_citations: citations,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        752
+      ],
+      "id": "e9c49ee4-2bbd-4bdb-b934-61595dfb522c",
+      "name": "Extract Perplexity Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst systemPrompt = \"You are the Signal Detection Engine for Opportunity Radar — an AI built for Indian retail investors monitoring NSE/BSE-listed companies.\\n\\nYour job is NOT to summarize what happened. Your job is to determine whether what happened MATTERS, WHY it matters, and WHAT an investor should watch for next.\\n\\nSTEP 1 — Is this routine or unusual?\\nROUTINE (return signal_tier: noise):\\n- Price movements under 3% with no fundamental catalyst\\n- Routine quarterly results within 5% of estimates\\n- Board meeting to approve routine financials\\n- Annual general meeting notice\\n- Small bulk deals under 0.1% of total shares\\n- General market news not specific to a company\\n\\nUNUSUAL (investigate further):\\n- Auditor resignation or change mid-year\\n- Promoter pledge creation or increase\\n- Insider sale by CEO/CFO above Rs 1 crore\\n- Bulk deal above 0.5% of total shares\\n- Revenue or PAT guidance revision\\n- Management commentary using challenging, headwinds, reassessing\\n- Debt restructuring or NPA classification\\n- Key managerial personnel resignation\\n- Regulatory action or SEBI notice\\n- Significant price movement with fundamental catalyst\\n\\nSTEP 2 — What specifically changed?\\nWrite exact numbers, percentages, dates, rupee values, named individuals.\\nBAD: Management revised guidance downward.\\nGOOD: FY26 revenue guidance cut from Rs 4,200 Cr to Rs 3,600 Cr — 14.3% downward revision.\\n\\nCRITICAL NUMBER RULES — READ CAREFULLY:\\n- NEVER attribute a figure to a company unless the source explicitly states that figure for THAT specific company.\\n- If the source covers multiple stocks in a basket or list, only extract figures that directly and explicitly apply to the ticker being analyzed.\\n- If an article says stock A has 42% upside and stock B has 24% upside, and you are analyzing stock B, write 24% — never 42%.\\n- If the exact figure for this ticker is a range, state the full range — never pick only the highest end.\\n- If you are not certain a specific number applies to this ticker, omit the number entirely and write what is known without it.\\n- A vague but accurate headline is always better than a specific but wrong one.\\n- BAD: UBS sees 42% upside for Reliance (if 42% was the basket high, not RIL-specific)\\n- GOOD: UBS includes Reliance in top largecap picks with analyst upside estimate\\n\\nCRITICAL NAME AND ROLE RULES:\\n- NEVER infer or guess a person's name or title. Only use names explicitly stated in the PRIMARY SOURCE for this specific event.\\n- If the source says the chairman resigned without naming them, write the chairman — not a specific name.\\n- NEVER combine two separate events into one narrative. If a source mentions both an executive resignation AND a fund manager portfolio change, treat these as entirely separate facts. Do NOT imply one caused the other unless the source explicitly states causation.\\n- NEVER state a stake size or rupee value unless it is explicitly stated in the PRIMARY SOURCE with direct attribution.\\n- Removing a stock from a portfolio is NOT the same as selling a personal stake — never convert one into the other.\\n- If what_happened requires connecting two facts from different parts of the article, set confidence: low and explain in confidence_reason.\\n\\nSTEP 3 — Historical pattern\\nUse the research context provided. State precedent explicitly with outcome.\\nIf no precedent: write No comparable prior event found.\\n\\nSTEP 4 — Sector context\\nIs this isolated or sector-wide? One sentence only.\\n\\nSTEP 5 — Watch for next\\nONE specific trigger. One sentence only.\\n\\nCRITICAL RULES:\\n1. NEVER say investors should buy or sell.\\n2. NEVER omit the source field.\\n3. NEVER return signal_tier high without specific historical precedent.\\n4. If data is ambiguous return confidence: low.\\n5. Treat promoter actions with extra scrutiny.\\n6. NEVER attribute a number to a company unless the source explicitly states that number for that company.\\n7. When a source covers multiple companies, treat each company's figures independently — never cross-contaminate.\\n8. If uncertain about a specific figure, omit it — do not guess or use the nearest available number.\\n9. confidence must be low if the article covers multiple stocks and ticker-specific figures are not clearly separated.\\n10. NEVER attribute a number, name, or causal link that is not explicitly stated in the PRIMARY SOURCE.\\n11. When fetch_success is true, the PRIMARY SOURCE is the ONLY factual source — ignore anything that contradicts it.\\n\\nReturn ONLY a valid JSON object. No explanation. No markdown. No backticks.\";\n\nconst ticker = item.symbol || item.matched_ticker || 'Unknown';\nconst monitoringType = item.monitoring_type || 'universe';\nconst dataType = item.data_type || 'news';\nconst source = item.source || 'Unknown';\nconst pubDate = item.pubDate || 'Unknown';\n\n// When raw article was successfully fetched, use it as the ONLY source\n// Drop Perplexity entirely to prevent name/number contamination\nconst fullContext = (item.fetch_success === true && item.article_text && item.article_text.length > 150)\n  ? `PRIMARY SOURCE (raw article from ${source} — this is the ONLY factual source, ignore everything else):\\n${item.article_text}\\n\\nSTRICT INSTRUCTION: Base your entire analysis ONLY on the PRIMARY SOURCE above. Do not infer, extrapolate, or add any facts, names, figures, or causal links not explicitly present in this text.`\n  : `RESEARCH CONTEXT (Perplexity summary — treat with caution, verify all names and figures before using):\\n${item.perplexity_context || 'No context available'}`;\n\nconst userMessage = \"Analyze this market event for ONLY the ticker specified below.\\n\\nticker: \" + ticker + \"\\nmonitoring_type: \" + monitoringType + \"\\ndata_type: \" + dataType + \"\\nsource: \" + source + \"\\npub_date: \" + pubDate + \"\\nfetch_success: \" + (item.fetch_success || false) + \"\\n\\n\" + fullContext + \"\\n\\nREMINDERS BEFORE YOU RESPOND:\\n1. Only use names explicitly stated in the source for THIS event — do not infer roles or identities.\\n2. Only use figures explicitly attributed to \" + ticker + \" — do not borrow numbers from other stocks or events.\\n3. Do NOT convert a portfolio removal into a personal stake sale.\\n4. Do NOT link two separate events as cause-and-effect unless the source explicitly states this.\\n5. If fetch_success is true, the PRIMARY SOURCE above is gospel — do not add anything not in that text.\\n6. When in doubt about any fact — omit it. Accurate and incomplete beats specific and wrong.\\n\\nReturn this exact JSON structure and nothing else:\\n{\\n  \\\"signal_tier\\\": \\\"high or medium or noise\\\",\\n  \\\"ticker\\\": \\\"NSE ticker symbol\\\",\\n  \\\"event_type\\\": \\\"insider_trade or filing or bulk_deal or results or news or regulatory\\\",\\n  \\\"headline\\\": \\\"One sentence max 15 words, only figures explicitly stated for this ticker in the source\\\",\\n  \\\"what_happened\\\": \\\"2-3 sentences with exact numbers explicitly attributed to this ticker only — omit any figure you cannot directly trace to the source\\\",\\n  \\\"why_it_matters\\\": \\\"2-3 sentences investor impact\\\",\\n  \\\"historical_precedent\\\": \\\"What happened last time with outcome, or No comparable prior event found\\\",\\n  \\\"sector_context\\\": \\\"Isolated or sector-wide, one sentence only\\\",\\n  \\\"watch_for_next\\\": \\\"One specific trigger, one sentence only\\\",\\n  \\\"source\\\": \\\"Exact source name with date\\\",\\n  \\\"confidence\\\": \\\"high or medium or low\\\",\\n  \\\"confidence_reason\\\": \\\"One sentence — explicitly note if any names or figures could not be verified from the primary source\\\"\\n}\";\n\nconst payload = {\n  model: \"gpt-4o\",\n  max_tokens: 1000,\n  messages: [\n    {\n      role: \"system\",\n      content: systemPrompt\n    },\n    {\n      role: \"user\",\n      content: userMessage\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    ...item,\n    ai_payload: JSON.stringify(payload)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        752
+      ],
+      "id": "5ba8ed61-5839-4bde-9a15-57f51b8b2b11",
+      "name": "Build AI Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.ai_payload }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2144,
+        752
+      ],
+      "id": "1d203709-72c3-401e-8c54-1464da45057b",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst originalItem = $('Build AI Payload').first().json;\n\n// Extract text from OpenAI response\nconst rawText = response.choices?.[0]?.message?.content || '';\n\n// Parse JSON\nlet signal = {};\ntry {\n  const cleaned = rawText\n    .replace(/```json/g, '')\n    .replace(/```/g, '')\n    .trim();\n  signal = JSON.parse(cleaned);\n} catch(e) {\n  signal = {\n    signal_tier: \"noise\",\n    ticker: originalItem.symbol || originalItem.matched_ticker || 'UNKNOWN',\n    event_type: originalItem.data_type || 'news',\n    headline: \"Parse error — signal could not be extracted\",\n    what_happened: rawText.substring(0, 200),\n    why_it_matters: \"JSON parsing failed\",\n    historical_precedent: \"No comparable prior event found\",\n    sector_context: \"Unknown\",\n    watch_for_next: \"Manual review required\",\n    source: originalItem.source || 'Unknown',\n    confidence: \"low\",\n    confidence_reason: \"JSON parsing failed: \" + e.message\n  };\n}\n\n// ── QUALITY GATES ──\nconst warnings = [];\n\n// Gate 1: Downgrade HIGH→MEDIUM if no historical precedent\nif (signal.signal_tier === 'high' &&\n    (!signal.historical_precedent ||\n     signal.historical_precedent === 'No comparable prior event found')) {\n  signal.signal_tier = 'medium';\n  signal.confidence = signal.confidence === 'high' ? 'medium' : signal.confidence;\n  warnings.push('Downgraded HIGH→MEDIUM: no historical precedent provided');\n}\n\n// Gate 2: Downgrade HIGH→MEDIUM for pure news items without hard evidence\nif (signal.signal_tier === 'high' && signal.event_type === 'news') {\n  signal.signal_tier = 'medium';\n  warnings.push('Downgraded HIGH→MEDIUM: news items require filing/insider confirmation for HIGH tier');\n}\n\n// Gate 3: Force low confidence if multiple named individuals detected\n// (risk of cross-contamination between people)\nconst nameMatches = (signal.what_happened || '').match(/[A-Z][a-z]+ [A-Z][a-z]+/g) || [];\nif (nameMatches.length >= 3 && signal.confidence === 'high') {\n  signal.confidence = 'medium';\n  warnings.push('Confidence capped at medium: multiple named individuals detected');\n}\n\n// Gate 4: Flag suspiciously large rupee figures for manual review\nconst text = JSON.stringify(signal);\nconst largeFigures = text.match(/₹[\\d,]+\\s*[Cc]r|Rs\\.?\\s*[\\d,]+\\s*[Cc]r/g) || [];\nlargeFigures.forEach(fig => {\n  const num = parseInt(fig.replace(/[^\\d]/g, ''));\n  if (num > 50000) {\n    warnings.push(`Large figure detected (${fig}) — verify against source`);\n    if (signal.confidence === 'high') signal.confidence = 'medium';\n  }\n});\n\nreturn [{\n  json: {\n    ...signal,\n    monitoring_type: originalItem.monitoring_type || 'universe',\n    original_link: originalItem.original_link || originalItem.link || '',\n    original_source: originalItem.original_source || originalItem.source || '',\n    original_pub_date: originalItem.pubDate || '',\n    perplexity_citations: originalItem.perplexity_citations || '',\n    processed_at: new Date().toISOString(),\n    guid: originalItem.guid || originalItem.link || '',\n    quality_warnings: warnings.length > 0 ? warnings.join(' | ') : null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2368,
+        752
+      ],
+      "id": "8a920fc5-4adc-4f58-ada8-78273d380aa5",
+      "name": "Extract Signal"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "19e71432-dd29-493a-a5a1-6c6835fb64b9",
+              "leftValue": "={{ $json.signal_tier }}",
+              "rightValue": "noise",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2592,
+        752
+      ],
+      "id": "4965eaa6-be06-4407-bd91-e8ba34dbfcd4",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "content": "Processing every item in a frequency of 15 minutes will increase the API cost. This node filters only items that are likely signals.",
+        "height": 112,
+        "width": 224,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        320,
+        -512
+      ],
+      "typeVersion": 1,
+      "id": "71aea84d-f6f5-435c-aad0-7fa93a21c0ce",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "var HIGH_SIGNAL_KEYWORDS = [\n  'INSIDER', 'BULK DEAL', 'BLOCK DEAL', 'PROMOTER',\n  'CFO', 'CEO', 'MD ', 'CTO ', 'RESIGN', 'STEP DOWN',\n  'ACQUI', 'MERGER', 'TAKEOVER', 'OPEN OFFER',\n  'FRAUD', 'SEBI', 'PENALTY', 'INVESTIGATION', 'WHISTLEBLOWER',\n  'BUYBACK', 'DELISTING', 'QIP', 'FPO',\n  'DEFAULT', 'NPA', 'RESTRUCTUR'\n];\n\nvar MEDIUM_SIGNAL_KEYWORDS = [\n  'GUIDANCE', 'DOWNGRADE', 'UPGRADE', 'OUTLOOK',\n  'STAKE', 'STAKE SALE', 'STAKE BUY',\n  'BEAT ESTIMATE', 'MISS ESTIMATE', 'PROFIT JUMP', 'LOSS WIDEN',\n  'MARGIN EXPAND', 'MARGIN CONTRACT', 'REVENUE SURGE', 'REVENUE DECLINE',\n  'ANALYST', 'TARGET PRICE', 'RATING', 'OVERWEIGHT', 'UNDERWEIGHT',\n  'BLOCK DEAL', 'PORTFOLIO', 'FUND HOUSE', 'FII', 'DII',\n  'QUARTERLY RESULT', 'Q1', 'Q2', 'Q3', 'Q4', 'EARNINGS',\n  'PARTNERSHIP', 'JOINT VENTURE', 'CONTRACT WIN', 'ORDER WIN',\n  'EXPANSION', 'CAPEX', 'FUNDRAISE', 'RIGHTS ISSUE'\n];\n\nvar results = [];\n\nfor (var i = 0; i < $input.all().length; i++) {\n  var item = $input.all()[i];\n  var data = item.json;\n\n  // Skip items with no content\n  if (!data.title && !data.symbol && !data.headline) continue;\n\n  // Ensure every item has a guid\n  if (!data.guid) {\n    data.guid = (data.link || data.title || data.symbol || Math.random().toString()).substring(0, 100);\n  }\n\n  // Portfolio items — always pass through\n  if (data.monitoring_type === 'portfolio') {\n    results.push({ json: data });\n    continue;\n  }\n\n  // Universe items — pass if high OR medium signal keyword found\n  if (data.monitoring_type === 'universe') {\n    var text = JSON.stringify(data).toUpperCase();\n\n    var isHighSignal = false;\n    for (var k = 0; k < HIGH_SIGNAL_KEYWORDS.length; k++) {\n      if (text.includes(HIGH_SIGNAL_KEYWORDS[k])) {\n        isHighSignal = true; break;\n      }\n    }\n\n    var isMediumSignal = false;\n    if (!isHighSignal) {\n      for (var m = 0; m < MEDIUM_SIGNAL_KEYWORDS.length; m++) {\n        if (text.includes(MEDIUM_SIGNAL_KEYWORDS[m])) {\n          isMediumSignal = true; break;\n        }\n      }\n    }\n\n    if (isHighSignal || isMediumSignal) {\n      results.push({ json: data });\n    }\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        752
+      ],
+      "id": "f5a93230-3524-4c58-a6a2-0fac4fd651be",
+      "name": "Keyword Filter",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "url": "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Referer",
+              "value": "https://www.nseindia.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -768,
+        848
+      ],
+      "id": "a0e274b4-fecd-4c27-9327-82b9b7e16d81",
+      "name": "Fetch Nifty 500 List"
+    },
+    {
+      "parameters": {
+        "tableId": "signals",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "signal_tier",
+              "fieldValue": "={{ $json.signal_tier }}"
+            },
+            {
+              "fieldId": "ticker",
+              "fieldValue": "={{ $json.ticker }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{ $json.event_type }}"
+            },
+            {
+              "fieldId": "headline",
+              "fieldValue": "={{ $json.headline }}"
+            },
+            {
+              "fieldId": "what_happened",
+              "fieldValue": "={{ $json.what_happened }}"
+            },
+            {
+              "fieldId": "why_it_matters",
+              "fieldValue": "={{ $json.why_it_matters }}"
+            },
+            {
+              "fieldId": "historical_precedent",
+              "fieldValue": "={{ $json.historical_precedent }}"
+            },
+            {
+              "fieldId": "sector_context",
+              "fieldValue": "={{ $json.sector_context }}"
+            },
+            {
+              "fieldId": "watch_for_next",
+              "fieldValue": "={{ $json.watch_for_next }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.source }}"
+            },
+            {
+              "fieldId": "confidence",
+              "fieldValue": "={{ $json.confidence }}"
+            },
+            {
+              "fieldId": "confidence_reason",
+              "fieldValue": "={{ $json.confidence_reason }}"
+            },
+            {
+              "fieldId": "monitoring_type",
+              "fieldValue": "={{ $json.monitoring_type }}"
+            },
+            {
+              "fieldId": "original_link",
+              "fieldValue": "={{ $json.original_link }}"
+            },
+            {
+              "fieldId": "original_source",
+              "fieldValue": "={{ $json.original_link }}"
+            },
+            {
+              "fieldId": "original_pub_date",
+              "fieldValue": "={{ $json.original_pub_date }}"
+            },
+            {
+              "fieldId": "perplexity_citations",
+              "fieldValue": "={{ $json.perplexity_citations }}"
+            },
+            {
+              "fieldId": "processed_at",
+              "fieldValue": "={{ $json.processed_at }}"
+            },
+            {
+              "fieldId": "guid",
+              "fieldValue": "={{ $json.guid }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2816,
+        752
+      ],
+      "id": "63c11f11-9b40-4c43-96ef-e0a5ece5ddf7",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "biXmGMkZLaRCpWgC",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "processed_guids",
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "guid",
+              "condition": "eq",
+              "keyValue": "={{ $json.guid }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        352,
+        752
+      ],
+      "id": "79db6fce-0654-4d55-af7a-75095c06889b",
+      "name": "GUID Check",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "biXmGMkZLaRCpWgC",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "62075291-1a23-4ea6-811e-51968ed22db8",
+              "leftValue": "={{ $json.guid }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        576,
+        752
+      ],
+      "id": "1c41d6d4-a1d6-4d8c-b8b5-496e20519159",
+      "name": "Is New Item?"
+    },
+    {
+      "parameters": {
+        "tableId": "processed_guids",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "guid",
+              "fieldValue": "={{ $json.guid }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        752
+      ],
+      "id": "91c907f0-fe94-4cb3-ae49-9e9d64ca4c45",
+      "name": "Save GUID",
+      "credentials": {
+        "supabaseApi": {
+          "id": "biXmGMkZLaRCpWgC",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 3-11 * * 1-5"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1216,
+        -128
+      ],
+      "id": "db740484-c450-4dcb-b1de-197ee1e72f8f",
+      "name": "15min Trigger (Market Hours)"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 11-17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1200,
+        512
+      ],
+      "id": "470dd34f-fe5a-4856-b1d0-ed442bbb072d",
+      "name": "1hr Trigger (Post-market)"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */4 * * 0,6"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1200,
+        1104
+      ],
+      "id": "f95f1483-0d2a-44a3-b531-201974241767",
+      "name": "4hr Trigger (Weekends)"
+    },
+    {
+      "parameters": {
+        "url": "https://bpxdzwlhffujlmrglvts.supabase.co/rest/v1/portfolios?select=ticker&user_id=eq.default&limit=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJweGR6d2xoZmZ1amxtcmdsdnRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk0NTgsImV4cCI6MjA5MDAyNTQ1OH0.zo2t2OVeEr0Cv5uRf1E5WVaU2N1TLvxnNKPj7tsTReI"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJweGR6d2xoZmZ1amxtcmdsdnRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk0NTgsImV4cCI6MjA5MDAyNTQ1OH0.zo2t2OVeEr0Cv5uRf1E5WVaU2N1TLvxnNKPj7tsTReI"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -320,
+        848
+      ],
+      "id": "68b88b85-d1ac-47a5-a5d9-0185914976cc",
+      "name": "Fetch Portfolio from Supabase",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link || $json.original_link }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1472,
+        752
+      ],
+      "id": "2311f82a-1e79-4dab-b7ed-75bfb556de29",
+      "name": "Fetch Original Article"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fetchResult = $input.first().json;\nconst previousItem = $('Extract Perplexity Response').first().json;\n\n// Get raw HTML from the fetch result\nlet rawHtml = '';\ntry {\n  rawHtml = fetchResult.data || fetchResult.body || fetchResult.content || '';\n  // If data is an object, stringify it\n  if (typeof rawHtml === 'object') rawHtml = JSON.stringify(rawHtml);\n} catch(e) {\n  rawHtml = '';\n}\n\n// Strip HTML tags and clean text\nlet articleText = rawHtml\n  .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '')\n  .replace(/<header[^>]*>[\\s\\S]*?<\\/header>/gi, '')\n  .replace(/<footer[^>]*>[\\s\\S]*?<\\/footer>/gi, '')\n  .replace(/<nav[^>]*>[\\s\\S]*?<\\/nav>/gi, '')\n  .replace(/<aside[^>]*>[\\s\\S]*?<\\/aside>/gi, '')\n  .replace(/<form[^>]*>[\\s\\S]*?<\\/form>/gi, '')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\")\n  .replace(/&nbsp;/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim()\n  .substring(0, 4000);\n\n// Strict paywall detection — only exact phrases\nconst paywallPhrases = [\n  'sign in to read full article',\n  'subscribe to continue reading',\n  'login to continue reading',\n  'create a free account to read',\n  'this article is for subscribers',\n  'subscribe now to read'\n];\nconst isPaywalled = paywallPhrases.some(p =>\n  articleText.toLowerCase().includes(p)\n);\n\n// Only fall back if truly paywalled or article is too short to be useful\nconst isUsable = !isPaywalled && articleText.length > 150;\n\nconst finalContext = isUsable\n  ? articleText\n  : (previousItem.perplexity_context || 'No context available');\n\nreturn [{\n  json: {\n    ...previousItem,\n    article_text: finalContext,\n    fetch_success: isUsable,\n    fetch_note: isUsable\n      ? `Raw article fetched — ${articleText.length} chars`\n      : `Fallback to Perplexity — ${isPaywalled ? 'paywalled' : 'article too short'}`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        752
+      ],
+      "id": "03796942-34a5-4780-a067-a684d116051d",
+      "name": "Extract Article Text"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google News RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NSE Insider Trades CSV": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "NSE Bulk Deals CSV": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "ET Markets RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Parse + Deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse + Deduplicate": {
+      "main": [
+        [
+          {
+            "node": "Portfolio Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Portfolio Filter": {
+      "main": [
+        [
+          {
+            "node": "Keyword Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perplexity Payload": {
+      "main": [
+        [
+          {
+            "node": "Perplexity API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perplexity API": {
+      "main": [
+        [
+          {
+            "node": "Extract Perplexity Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Perplexity Response": {
+      "main": [
+        [
+          {
+            "node": "Fetch Original Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Extract Signal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Signal": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keyword Filter": {
+      "main": [
+        [
+          {
+            "node": "GUID Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Nifty 500 List": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GUID Check": {
+      "main": [
+        [
+          {
+            "node": "Is New Item?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Item?": {
+      "main": [
+        [
+          {
+            "node": "Perplexity Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "node": "Save GUID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "15min Trigger (Market Hours)": {
+      "main": [
+        [
+          {
+            "node": "Google News RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ET Markets RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NSE Insider Trades CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NSE Bulk Deals CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Nifty 500 List",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Portfolio from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1hr Trigger (Post-market)": {
+      "main": [
+        [
+          {
+            "node": "Google News RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ET Markets RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NSE Insider Trades CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NSE Bulk Deals CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Nifty 500 List",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Portfolio from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4hr Trigger (Weekends)": {
+      "main": [
+        [
+          {
+            "node": "Google News RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NSE Insider Trades CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NSE Bulk Deals CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Nifty 500 List",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Portfolio from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Portfolio from Supabase": {
+      "main": [
+        [
+          {
+            "node": "Portfolio Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Original Article": {
+      "main": [
+        [
+          {
+            "node": "Extract Article Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Article Text": {
+      "main": [
+        [
+          {
+            "node": "Build AI Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1e129113-c8b4-4a51-bad3-94f8940d5e43",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "879b5717a761d9134355f94df431cf9a7e1d6b0bea675e145f647ec7e81f6785"
+  },
+  "id": "pgVEwiUUoILzfMVE",
+  "tags": []
+}
