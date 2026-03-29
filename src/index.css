@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #070b0f;
+  --surface: #0d1420;
+  --card: #111827;
+  --card-hover: #161f2e;
+  --border: #1e2d3d;
+  --border-hi: #2a3f55;
+  --accent: #00d4aa;
+  --acc-dim: rgba(0, 212, 170, 0.10);
+  --acc-bdr: rgba(0, 212, 170, 0.25);
+  --high: #f87171;
+  --high-bg: rgba(248, 113, 113, 0.10);
+  --high-bdr: rgba(248, 113, 113, 0.30);
+  --med: #fbbf24;
+  --med-bg: rgba(251, 191, 36, 0.10);
+  --med-bdr: rgba(251, 191, 36, 0.30);
+  --t1: #e8f0fe;
+  --t2: #7c9ab5;
+  --t3: #3d5268;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background-color: var(--bg);
+  color: var(--t1);
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-hi);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hi);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes radarSweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes radarPing {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+.font-syne {
+  font-family: 'Syne', sans-serif;
+}
+
+.font-dm-mono {
+  font-family: 'DM Mono', monospace;
+}
