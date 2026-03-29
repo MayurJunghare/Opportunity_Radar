@@ -185,7 +185,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer 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"
+              "value": "Bearer PERPLEXITY_API_KEY"
             },
             {
               "name": "Content-Type",
